@@ -31,7 +31,11 @@ def _get_model():
     return _MODEL, _DEVICE
 
 
-def extract_embeddings(wav_path: Path, batch_size: int = 32) -> Tuple[np.ndarray, np.ndarray]:
+def extract_embeddings(
+    wav_path: Path,
+    batch_size: int = 32,
+    max_windows: int | None = None,
+) -> Tuple[np.ndarray, np.ndarray]:
     """Sliding-window embeddings over a wav file. Streams windows from disk."""
     import traceback
     import torch
@@ -49,6 +53,8 @@ def extract_embeddings(wav_path: Path, batch_size: int = 32) -> Tuple[np.ndarray
             return np.zeros((0, 192), dtype=np.float32), np.zeros((0,), dtype=np.float32)
 
         starts = np.arange(0, total_frames - win + 1, hop, dtype=np.int64)
+        if max_windows is not None:
+            starts = starts[:max(0, max_windows)]
         n = len(starts)
         times = ((starts + win / 2) / sr).astype(np.float32)
 

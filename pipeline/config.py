@@ -7,7 +7,7 @@ class Config:
     sample_rate: int = 16000
 
     window_sec: float = 60.0
-    hop_sec: float = 30.0
+    hop_sec: float = 60.0
 
     sim_threshold: float = 0.65
     margin_threshold: float = 0.10

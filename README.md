@@ -17,12 +17,13 @@ pip install -r requirements.txt
 ## 用法
 
 ```
-python -m pipeline.main <video.mp4> [--dry-run] [--no-demucs] \
+python -m pipeline.main <video.mp4> [--dry-run] [--demucs] \
        [--work-dir work] [--db-dir host_db] [--output-dir output]
 ```
 
 - `--dry-run`：只跑识别和段预测，**不切视频**。⚠️ 声纹库 `host_db/` 在自动入库阶段**仍会被写入**（这是两遍匹配机制的必要环节）。如果想完全只读，先备份 `host_db/` 或用 `--db-dir` 指向临时目录。
-- `--no-demucs`：跳过人声分离，速度快但 BGM 重时准确率下降
+- 默认跳过 Demucs 人声分离，直接使用 ffmpeg 抽取的 16k mono 音频。
+- `--demucs`：启用人声分离，速度慢；仅在 BGM 重、直接声纹准确率不足时使用。
 
 ### 冷启动
 
@@ -43,10 +44,11 @@ python -m pipeline.main <video.mp4> [--dry-run] [--no-demucs] \
 | 文件 | 职责 |
 |---|---|
 | preprocess.py | ffmpeg 抽音 + Demucs 人声分离 |
-| embedding.py  | 60s/30s 滑窗 ERes2Net 192 维声纹（流式读取）|
+| embedding.py  | 60s/60s 滑窗 ERes2Net 192 维声纹（流式读取）|
 | db.py         | 声纹库读写 + centroid EMA 更新 |
 | matching.py   | cosine 匹配 + 阈值/margin + 平滑 |
 | enrollment.py | 长 unknown 段聚类 → 自动入库 |
 | segmenting.py | 段合并 + unknown 桥接 + 长度过滤 + 过渡丢弃 |
 | cutting.py    | I-frame 对齐 + ffmpeg 无损切割 |
 | main.py       | 两遍流水线 CLI |
+
