@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Virtualenv
+.venv/
+venv/
+env/
+
+# Project artifacts (generated at runtime)
+work/
+host_db/
+output/
+
+# Local test data — never commit livestream recordings or audio samples
+*.ts
+*.mp4
+*.mkv
+*.flv
+*.wav
+*.mp3
+*.aac
+*.npy
+*.npz
+
+# IDE
+.vscode/
+.idea/
+.claude/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Diagnostic scripts not intended for repo
+probe_model.py
