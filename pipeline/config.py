@@ -26,7 +26,9 @@ class Config:
     centroid_ema_old: float = 0.9
     centroid_ema_new: float = 0.10
 
-    embedding_model: str = "iic/speech_eres2net_sv_zh-cn_16k-common"
+    embedding_model: str = "iic/speech_campplus_sv_zh-cn_16k-common"
+    embedding_dim: int = 192
+    embedding_batch_size: int = 1
 
 
 CFG = Config()

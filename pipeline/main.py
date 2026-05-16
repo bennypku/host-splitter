@@ -5,6 +5,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 
@@ -27,21 +28,30 @@ def log(msg: str):
 
 
 def run(video_path: Path, work_dir: Path, db_dir: Path, output_dir: Path,
-        dry_run: bool, demucs: bool, max_windows: int | None = None) -> int:
+        dry_run: bool, demucs: bool, max_windows: int | None = None,
+        batch_size: int | None = None) -> int:
     log(f"video: {video_path}")
+    run_t0 = perf_counter()
     log("step 1/6: preprocess audio")
+    step_t0 = perf_counter()
     audio_path = prepare_audio(video_path, work_dir, do_demucs=demucs)
+    log(f"  audio ready: {audio_path} ({perf_counter() - step_t0:.2f}s)")
 
     log("step 2/6: extract embeddings")
+    step_t0 = perf_counter()
     cache = work_dir / f"{video_path.stem}.embs.npz"
     if cache.exists():
         d = np.load(cache)
         embs, times = d["embs"], d["times"]
-        log(f"  loaded cache: {embs.shape[0]} windows")
+        log(f"  loaded cache: {embs.shape[0]} windows ({perf_counter() - step_t0:.2f}s)")
     else:
-        embs, times = extract_embeddings(audio_path, max_windows=max_windows)
+        embs, times = extract_embeddings(
+            audio_path,
+            batch_size=batch_size,
+            max_windows=max_windows,
+        )
         np.savez(cache, embs=embs, times=times)
-        log(f"  extracted {embs.shape[0]} windows")
+        log(f"  extracted {embs.shape[0]} windows ({perf_counter() - step_t0:.2f}s)")
 
     if embs.shape[0] == 0:
         log("no audio windows; aborting")
@@ -49,17 +59,22 @@ def run(video_path: Path, work_dir: Path, db_dir: Path, output_dir: Path,
 
     db = HostDB(db_dir)
     log(f"step 3/6: pass-1 match against {len(db.list_ids())} known hosts")
+    step_t0 = perf_counter()
     labels1, _ = match_embeddings(embs, db)
     labels1 = smooth_labels(labels1)
+    log(f"  pass-1 done ({perf_counter() - step_t0:.2f}s)")
 
     log("step 4/6: auto-enroll long unknown spans")
+    step_t0 = perf_counter()
     touched = auto_enroll_from_track(embs, labels1, times, db)
     if touched:
         log(f"  registered/updated: {touched}")
     else:
         log("  no new hosts enrolled")
+    log(f"  auto-enroll done ({perf_counter() - step_t0:.2f}s)")
 
     log(f"step 5/6: pass-2 match against {len(db.list_ids())} hosts")
+    step_t0 = perf_counter()
     labels2, _ = match_embeddings(embs, db)
     labels2 = smooth_labels(labels2)
 
@@ -72,6 +87,7 @@ def run(video_path: Path, work_dir: Path, db_dir: Path, output_dir: Path,
     log(f"  final segments (>=1h, transition-trimmed): {len(segments)}")
     for s in segments:
         log(f"    {s.label}: {s.start:.1f} -> {s.end:.1f} ({s.duration/60:.1f} min)")
+    log(f"  pass-2 and segmenting done ({perf_counter() - step_t0:.2f}s)")
 
     summary = {
         "video": str(video_path),
@@ -90,12 +106,16 @@ def run(video_path: Path, work_dir: Path, db_dir: Path, output_dir: Path,
 
     if dry_run:
         log("dry-run: skipping cut and DB persistence (DB writes already happened during enroll)")
+        log(f"done in {perf_counter() - run_t0:.2f}s")
         return 0
 
     log("step 6/6: cut video")
+    step_t0 = perf_counter()
     written = cut_segments(video_path, segments, output_dir)
     for w in written:
         log(f"  wrote {w}")
+    log(f"  cut done ({perf_counter() - step_t0:.2f}s)")
+    log(f"done in {perf_counter() - run_t0:.2f}s")
     return 0
 
 
@@ -111,11 +131,13 @@ def main(argv=None) -> int:
                    help="Enable Demucs vocal separation (slower; useful when BGM is heavy).")
     p.add_argument("--max-windows", type=int, default=None,
                    help="Debug only: process at most this many embedding windows.")
+    p.add_argument("--batch-size", type=int, default=None,
+                   help="Embedding batch size. Defaults to CFG.embedding_batch_size.")
     args = p.parse_args(argv)
 
     args.work_dir.mkdir(parents=True, exist_ok=True)
     return run(args.video, args.work_dir, args.db_dir, args.output_dir,
-               args.dry_run, args.demucs, args.max_windows)
+               args.dry_run, args.demucs, args.max_windows, args.batch_size)
 
 
 if __name__ == "__main__":

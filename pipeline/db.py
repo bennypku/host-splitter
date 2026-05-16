@@ -53,7 +53,7 @@ class HostDB:
         """Return (ids, M) where M is (K, D) stacked centroids. Empty if no hosts."""
         ids = list(self._centroids.keys())
         if not ids:
-            return [], np.zeros((0, 192), dtype=np.float32)
+            return [], np.zeros((0, CFG.embedding_dim), dtype=np.float32)
         M = np.stack([self._centroids[i] for i in ids], axis=0)
         return ids, M
 
