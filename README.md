@@ -23,8 +23,8 @@ python merge_recordings.py "E:\素材文件夹" --dry-run --today 20260516
 Start-Process -FilePath powershell -ArgumentList @(
   "-NoExit",
   "-Command",
-  "cd /d D:\host-splitter; python merge_recordings.py 'E:\素材文件夹' --today 20260516"
-)
+  "python merge_recordings.py 'E:\素材文件夹' --today 20260516"
+) -WorkingDirectory "D:\host-splitter"
 ```
 
 运行期间可直接查看新控制台窗口输出；结束后再次 dry-run，应输出 `no merge groups found`。
@@ -48,9 +48,39 @@ pip install -r requirements.txt
 
 ### 用法
 
+目录批处理：
+
+```
+python -m pipeline.main --input-dir "E:\素材文件夹" [--dry-run] [--demucs] [--batch-size 1]
+```
+
+目录模式会在素材文件夹内创建 `.host_meta/` 存放元数据和声纹库，切片输出到 `host01/host02/...`，处理成功的原始素材移动到 `host-splitted/`。
+
+真实按主播切割任务耗时较长，应启动为独立 Python 进程，并打开可见控制台窗口，避免阻塞当前会话：
+
+```
+Start-Process -FilePath powershell -ArgumentList @(
+  "-NoExit",
+  "-Command",
+  ".\.venv\Scripts\python.exe -m pipeline.main --input-dir 'E:\素材文件夹'"
+) -WorkingDirectory "D:\host-splitter"
+```
+
+单文件处理：
+
 ```
 python -m pipeline.main <video.mp4> [--dry-run] [--demucs] [--batch-size 1] \
        [--work-dir work] [--db-dir host_db] [--output-dir output]
+```
+
+单文件长任务同样建议使用独立控制台窗口：
+
+```
+Start-Process -FilePath powershell -ArgumentList @(
+  "-NoExit",
+  "-Command",
+  ".\.venv\Scripts\python.exe -m pipeline.main 'E:\素材文件夹\video.ts' --work-dir work --db-dir host_db --output-dir output"
+) -WorkingDirectory "D:\host-splitter"
 ```
 
 - `--dry-run`：只跑识别和段预测，**不切视频**。⚠️ 声纹库 `host_db/` 在自动入库阶段**仍会被写入**（这是两遍匹配机制的必要环节）。如果想完全只读，先备份 `host_db/` 或用 `--db-dir` 指向临时目录。
@@ -64,9 +94,11 @@ python -m pipeline.main <video.mp4> [--dry-run] [--demucs] [--batch-size 1] \
 
 ### 输出
 
-- `output/host_001/video1_part01.mp4` 等
+- 目录模式：`host01/video1_part01.mp4`、`host02/video1_part01.mp4` 等
+- 单文件模式：`output/host01/video1_part01.mp4` 等
+- 切片文件名格式：`原始素材名_开始时长_结束时长_partNN.ext`，其中 `partNN` 是原始素材内的全局切片序号，例如 `贵足鞋夫人20260514142319_01h20m00s_03h10m00s_part01.ts`
 - `work/<stem>.segments.json` 段时间线（人工核对用）
-- `host_db/` 声纹库（自动维护）
+- `host_db/` 或 `.host_meta/host_db/` 声纹库（自动维护）
 
 ### 关键参数
 

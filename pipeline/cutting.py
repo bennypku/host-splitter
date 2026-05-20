@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from bisect import bisect_right
 from pathlib import Path
 from typing import List
 
 from .segmenting import Segment
+
+
+_HOST_SUFFIX_RE = re.compile(r"(\d+)$")
 
 
 def get_keyframe_times(video_path: Path) -> List[float]:
@@ -44,6 +48,22 @@ def align_to_prev_keyframe(t: float, keyframes: List[float]) -> float:
     return keyframes[idx]
 
 
+def host_output_name(host_id: str) -> str:
+    """Map internal host ids like host_001 to output dirs like host01."""
+    m = _HOST_SUFFIX_RE.search(host_id)
+    if not m:
+        return host_id
+    return f"host{int(m.group(1)):02d}"
+
+
+def format_duration_tag(seconds: float) -> str:
+    total = max(0, int(round(seconds)))
+    h = total // 3600
+    m = (total % 3600) // 60
+    s = total % 60
+    return f"{h:02d}h{m:02d}m{s:02d}s"
+
+
 def cut_segment(video_path: Path, start: float, end: float, out_path: Path):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -68,13 +88,12 @@ def cut_segments(
     keyframes = get_keyframe_times(video_path)
     written: List[Path] = []
     stem = video_path.stem
-    parts_per_host = {}
-    for seg in segments:
+    for global_idx, seg in enumerate(segments, start=1):
         start_kf = align_to_prev_keyframe(seg.start, keyframes)
-        host_dir = output_root / seg.label
-        idx = parts_per_host.get(seg.label, 0) + 1
-        parts_per_host[seg.label] = idx
-        out_path = host_dir / f"{stem}_part{idx:02d}{video_path.suffix}"
+        host_dir = output_root / host_output_name(seg.label)
+        start_tag = format_duration_tag(seg.start)
+        end_tag = format_duration_tag(seg.end)
+        out_path = host_dir / f"{stem}_{start_tag}_{end_tag}_part{global_idx:02d}{video_path.suffix}"
         cut_segment(video_path, start_kf, seg.end, out_path)
         written.append(out_path)
     return written

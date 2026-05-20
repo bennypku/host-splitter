@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from pathlib import Path
 from time import perf_counter
@@ -21,6 +22,9 @@ from .segmenting import (
     bridge_short_unknowns,
 )
 from .cutting import cut_segments
+
+
+VIDEO_EXTS = {".ts", ".mp4", ".flv", ".mkv", ".mov", ".avi"}
 
 
 def log(msg: str):
@@ -119,9 +123,79 @@ def run(video_path: Path, work_dir: Path, db_dir: Path, output_dir: Path,
     return 0
 
 
+def discover_videos(folder: Path) -> list[Path]:
+    videos: list[Path] = []
+    skip_dirs = {".host_meta"}
+    for path in sorted(folder.iterdir(), key=lambda p: p.name):
+        if path.is_dir() and path.name in skip_dirs:
+            continue
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in VIDEO_EXTS:
+            continue
+        videos.append(path)
+    return videos
+
+
+def archive_processed(video_path: Path, processed_dir: Path) -> Path:
+    processed_dir.mkdir(parents=True, exist_ok=True)
+    dest = processed_dir / video_path.name
+    if dest.exists():
+        raise FileExistsError(f"processed archive already exists: {dest}")
+    shutil.move(str(video_path), str(dest))
+    return dest
+
+
+def run_folder(folder: Path, dry_run: bool, demucs: bool,
+               max_windows: int | None = None,
+               batch_size: int | None = None) -> int:
+    folder = folder.resolve()
+    if not folder.is_dir():
+        raise NotADirectoryError(folder)
+
+    meta_dir = folder / ".host_meta"
+    work_root = meta_dir / "work"
+    db_dir = meta_dir / "host_db"
+    processed_dir = folder / "host-splitted"
+    output_dir = folder
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    work_root.mkdir(parents=True, exist_ok=True)
+
+    videos = discover_videos(folder)
+    log(f"input dir: {folder}")
+    log(f"videos found: {len(videos)}")
+    if not videos:
+        return 0
+
+    failed = 0
+    for video in videos:
+        log(f"batch item: {video.name}")
+        item_work = work_root / video.stem
+        item_work.mkdir(parents=True, exist_ok=True)
+        try:
+            rc = run(video, item_work, db_dir, output_dir, dry_run, demucs, max_windows, batch_size)
+            if rc != 0:
+                failed += 1
+                log(f"  failed with exit code {rc}; source stays in place")
+                continue
+            if dry_run:
+                log("  dry-run: source stays in place")
+                continue
+            archived = archive_processed(video, processed_dir)
+            log(f"  moved source to {archived}")
+        except Exception as exc:
+            failed += 1
+            log(f"  ERROR: {exc}; source stays in place")
+
+    log(f"batch done: success={len(videos) - failed}, failed={failed}")
+    return 1 if failed else 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description="Split livestream recording by speaker.")
-    p.add_argument("video", type=Path)
+    p.add_argument("video", type=Path, nargs="?", help="Single video file to process.")
+    p.add_argument("--input-dir", type=Path,
+                   help="Process all livestream recordings in this folder.")
     p.add_argument("--work-dir", type=Path, default=Path("work"))
     p.add_argument("--db-dir", type=Path, default=Path("host_db"))
     p.add_argument("--output-dir", type=Path, default=Path("output"))
@@ -134,6 +208,11 @@ def main(argv=None) -> int:
     p.add_argument("--batch-size", type=int, default=None,
                    help="Embedding batch size. Defaults to CFG.embedding_batch_size.")
     args = p.parse_args(argv)
+
+    if args.input_dir is not None:
+        return run_folder(args.input_dir, args.dry_run, args.demucs, args.max_windows, args.batch_size)
+    if args.video is None:
+        p.error("video is required unless --input-dir is used")
 
     args.work_dir.mkdir(parents=True, exist_ok=True)
     return run(args.video, args.work_dir, args.db_dir, args.output_dir,
